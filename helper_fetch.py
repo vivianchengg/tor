@@ -1,4 +1,5 @@
 #! /usr/bin/env python3
+import time
 
 import requests, re
 import random
@@ -6,27 +7,22 @@ from bs4 import BeautifulSoup
 import pandas as pd
 from io import StringIO
 import xml.etree.ElementTree as ET
-# import yfinance
+import yfinance as yf
 
 headers = {
     'User-Agent': 'casual project: side project trying to work with web scraping'
 }
 
-
 secUrl = 'https://www.sec.gov'
 archiveUrl = '/Archives/edgar/data/1067983/'
 targetOwner = 'Berkshire Hathaway Inc'
-csvName = 'berkshire_holdings_combined.csv'
-
-allData = pd.DataFrame()
 
 def fetchLink(url):
   res = requests.get(url, headers=headers)
   soup = BeautifulSoup(res.text, 'html.parser')
   return soup
 
-def fetchXmlContent(url, reportDate):
-  global allData
+def fetchXmlContent(url, reportDate, allData):
   print(f"\nfetching content from {url}...")
   res = requests.get(url, headers=headers)
   tree = ET.ElementTree(ET.fromstring(res.content))
@@ -35,6 +31,7 @@ def fetchXmlContent(url, reportDate):
 
   print(df)
   allData = pd.concat([allData, df], ignore_index=True)
+  return allData
 
 def parseXml(element, period_of_report):
   data = {}
@@ -64,7 +61,6 @@ def parseXml(element, period_of_report):
 
   return pd.DataFrame.from_dict(data, orient='index')
 
-
 def checkPrimary(url):
   res = requests.get(url, headers=headers)
   xmlContent = res.text
@@ -86,7 +82,7 @@ def checkTarget(soup):
     href = link.get('href')
 
     # check target xml
-    if href.endswith('.xml'):
+    if href and href.endswith('.xml'):
       xmlName = href.split('/')[-1]
       # digit or '-' only
       regex = r'^[\d-]+.xml$'
@@ -105,23 +101,12 @@ def checkTarget(soup):
 
   return xmlUrl, (isTargetXml and isTargetOwner), reportDate
 
-def saveData():
-  global allData
-  sortData(allData)
-  allData.to_csv(csvName, index=False)
-  print(f"Data saved to '{csvName}'.")
-
-def sortData(df):
-  global allData
-  df['periodOfReport'] = pd.to_datetime(df['periodOfReport'])
-  allData = df.sort_values(by=['cusip', 'periodOfReport'], ascending=[True, True]).reset_index(drop=True)
-
-def fetchFiles():
+def fetchFiles(allData):
   soup = fetchLink(f"{secUrl}{archiveUrl}")
 
   for link in soup.find_all('a'):
     href = link.get('href')
-    if not href.startswith(archiveUrl):
+    if not href or not href.startswith(archiveUrl):
       continue
 
     folderUrl = f"{secUrl}{href}"
@@ -130,39 +115,9 @@ def fetchFiles():
     xmlUrl, isTarget, reportDate = checkTarget(soup)
 
     if isTarget:
-      fetchXmlContent(xmlUrl, reportDate)
+      allData = fetchXmlContent(xmlUrl, reportDate, allData)
+
+    time.sleep(0.11) # SEC’s limit of 10 requests per second
 
   print('done')
-
-def checkStock(df):
-  prevTime = None
-  prevVal = -1
-  prevAmt = -1
-  for period in df['periodOfReport'].unique():
-    sData = df[df['periodOfReport'] == period]
-    company = sData['nameOfIssuer'].values[0]
-    cusip = sData['cusip'].values[0]
-    if prevVal == -1 and prevAmt == -1 and prevTime is None:
-      prevVal, prevAmt, prevTime = sData['value'].values[0], sData['shrs_or_prn_amt'].values[0], sData['periodOfReport'].values[0]
-      continue
-    else:
-      curVal, curAmt, curTime = sData['value'].values[0], sData['shrs_or_prn_amt'].values[0], sData['periodOfReport'].values[0]
-      # ...
-      print(f"from {prevTime} to {curTime}: {company}({cusip}) - {prevAmt}/{prevVal} -> {curAmt}/{curVal}")
-      prevVal, prevAmt, prevTime = curVal, curAmt, curTime
-
-def analyse():
-  df = pd.read_csv(csvName)
-  df = df.drop_duplicates()
-  for cusip in df['cusip'].unique():
-    cData = df[df['cusip'] == cusip]
-    checkStock(cData)
-    break
-
-def main():
-  # fetchFiles()
-  # saveData()
-  analyse()
-
-if __name__ == '__main__':
-  main()
+  return allData
