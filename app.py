@@ -7,16 +7,6 @@ from helper_analyse import analyse
 from helper_fetch import fetchFiles
 from helper_save import saveData
 
-headers = {
-    'User-Agent': 'casual project: side project trying to work with web scraping'
-}
-
-
-secUrl = 'https://www.sec.gov'
-archiveUrl = '/Archives/edgar/data/1067983/'
-targetOwner = 'Berkshire Hathaway Inc'
-csvName = 'berkshire_holdings_combined.csv'
-
 def main():
   # allData = pd.DataFrame()
   # # manage csv
