@@ -13,6 +13,8 @@ updated_ticker_mapping = {
   'LENB': 'LEN-B'
 }
 
+outdatedCusips = ['00507V109', '862121100']
+
 def cusip_to_ticker_batch(cusips, dict):
   headers = {
       'Content-Type': 'application/json',
@@ -93,6 +95,9 @@ def handleROEDECols(df):
     period = row['periodOfReport']
     year = int(period.split('-')[0].strip())
 
+    # if ticker != 'STOR':
+    #   continue
+
     print('--------')
     print(ticker)
 
@@ -149,10 +154,15 @@ def handleFundColumns(df):
 
   df.to_csv(csvName, index=False)
 
+def handleOutdatedComp(df):
+  df = df[~df['cusip'].isin(outdatedCusips)]
+  return df
+
 def analyse():
   df = pd.read_csv(csvName)
   df = df.drop_duplicates()
 
+  df = handleOutdatedComp(df)
   handleFundColumns(df)
 
   for cusip in df['cusip'].unique():
