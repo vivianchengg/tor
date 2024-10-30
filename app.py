@@ -11,8 +11,7 @@ def getTickerMap():
   df1 = pd.read_csv('ticker1.txt', delimiter='|')
   df2 = pd.read_csv('ticker2.txt', delimiter='|')
   df3 = pd.read_csv('ticker3.txt', delimiter='|')
-  df = pd.concat([df1, df2], ignore_index=True)
-  df = pd.concat([df, df3], ignore_index=True)
+  df = pd.concat([df1, df2, df3], ignore_index=True)
   df = df[['CUSIP', 'SYMBOL', 'DESCRIPTION']]
   df.to_csv('tickerData.csv', index=False)
 
