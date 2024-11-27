@@ -44,7 +44,7 @@ def cusip_to_ticker_batch(cusips, dict):
 
   return dict
 
-def fetchYF(ticker):
+def fetchROEDE(ticker):
   try:
     stock = yf.Ticker(ticker)
 
@@ -101,7 +101,7 @@ def handleROEDECols(df):
     print('--------')
     print(ticker)
 
-    roe, de_ratio = fetchYF(ticker)
+    roe, de_ratio = fetchROEDE(ticker)
 
     if roe is not None:
       try:
@@ -152,20 +152,142 @@ def handleFundColumns(df):
 
   df = handleROEDECols(df)
 
-  df.to_csv(csvName, index=False)
+  return df
 
 def handleOutdatedComp(df):
   df = df[~df['cusip'].isin(outdatedCusips)]
+  return df
+
+def handleMissingVal(df):
+  df['ROE'] = df.groupby('cusip')['ROE'].fillna(method='ffill')
+  avgDE = df.groupby('cusip')['D/E Ratio'].transform('mean')
+  df['D/E Ratio'] = df['D/E Ratio'].fillna(avgDE)
+  df = df.dropna(subset=['industry'])
+  return df
+
+def fetch_industry(ticker):
+  try:
+    stock = yf.Ticker(ticker)
+    industry = stock.info.get('industry', None)
+    return industry
+  except Exception as e:
+    print(f"Error fetching industry for {ticker}: {e}")
+    return None
+    
+def fetch_profit_margin(ticker):
+  try:
+    stock = yf.Ticker(ticker)
+    financials = stock.financials
+    net_income = financials.loc['Net Income'] if 'Net Income' in financials.index else None
+    revenue = financials.loc['Total Revenue'] if 'Total Revenue' in financials.index else None
+    profit_margin = net_income / revenue if net_income is not None and revenue is not None else None
+    return profit_margin
+  except Exception as e:
+    print(f"Error for {ticker}: {e}")
+    return None
+
+def fetch_pb_ratio(ticker):
+  try:
+    stock = yf.Ticker(ticker)
+    price = stock.info.get('currentPrice', None)
+    balance_sheet = stock.balancesheet
+    total_equity = balance_sheet.loc['Stockholders Equity'] if 'Stockholders Equity' in balance_sheet.index else None
+    outstanding_shares = stock.info.get('sharesOutstanding', None)
+    bvps = total_equity / outstanding_shares if total_equity is not None and outstanding_shares is not None else None
+    pb_ratio = price / bvps if price is not None and bvps is not None else None
+    return pb_ratio
+  except Exception as e:
+    print(f"Error fetching P/B Ratio for {ticker}: {e}")
+    return None
+
+def fetch_pe_ratio(ticker):
+  try:
+    stock = yf.Ticker(ticker)
+    price = stock.info.get('currentPrice', None)
+    eps = stock.info.get('trailingEps', None)
+    pe_ratio = price / eps if price is not None and eps is not None else None
+    print(pe_ratio)
+    return pe_ratio
+  except Exception as e:
+    print(f"Error fetching P/B Ratio for {ticker}: {e}")
+    return None
+  
+def fetch_dividend_score(ticker, year):
+  try:
+    stock = yf.Ticker(ticker)
+    payout_ratio = stock.info.get('payoutRatio', 0)
+    dYield = stock.info.get('dividendYield', 0)
+    dGrowth = 0
+    
+    adjustedPR = 1 - min(payout_ratio, 1)
+    print(f"ticker {ticker}: payout_ratio - {adjustedPR}, dYield - {dYield}, dGrowth - {dGrowth}")
+  except Exception as e:
+    print(f"Error fetching dividend score for {ticker}: {e}")
+    # return None
+
+def fetch_beta(ticker):
+  try:
+    stock = yf.Ticker(ticker)
+    beta = stock.info.get('beta', None)
+    return beta
+  except Exception as e:
+    print(f"Error fetching beta for {ticker}: {e}")
+    return None
+
+def handleColWYr(df, cols):
+  for col in cols:
+    df[col] = None
+    for index, row in df.iterrows():
+      ticker = row['ticker']
+      period = row['periodOfReport']
+      year = int(period.split('-')[0].strip())
+
+      target = None
+      if col == 'profit_margin':
+        target = fetch_profit_margin(ticker)
+      elif col == 'P/B ratio':
+        target = fetch_pb_ratio(ticker)
+      elif col == 'dividend_score':
+        fetch_dividend_score(ticker, year)
+
+      if target is not None:
+        try:
+          target_value = target.loc[target.index.year == year].iloc[0]
+          df.at[index, col] = target_value
+          print(f"{col} for year {year} - {ticker}: {target_value}")
+        except IndexError:
+          print(f"No {col} data for year: {year} for {ticker}")
+      else:
+        print(f'{col} ({ticker}) is None')
+
+  return df
+
+def handleMoreColumns(df):
+  df['industry'] = df['ticker'].apply(fetch_industry)
+  df = handleColWYr(df, ['profit_margin', 'P/B ratio'])
+  df['Industry_Avg_ROE'] = df.groupby('industry')['ROE'].transform('mean')
+  df['Industry_Avg_DE'] = df.groupby('industry')['D/E Ratio'].transform('mean')
+  df['beta'] = df['ticker'].apply(fetch_beta)
+  df['P/E ratio'] = df['ticker'].apply(fetch_pe_ratio)
   return df
 
 def analyse():
   df = pd.read_csv(csvName)
   df = df.drop_duplicates()
 
-  df = handleOutdatedComp(df)
-  handleFundColumns(df)
+  # df = handleOutdatedComp(df)
+  # df = handleFundColumns(df)
+  # df = handleMoreColumns(df)
+  # df = handleMissingVal(df)
 
-  for cusip in df['cusip'].unique():
-    cData = df[df['cusip'] == cusip]
-    checkStock(cData)
-    break
+  # more features first run
+  # df = handleColWYr(df, ['P/B ratio'])
+  # for ticker in df['ticker']:
+  #   fetch_pe_ratio(ticker)
+
+  df.to_csv(csvName, index=False)
+
+  # for cusip in df['cusip'].unique():
+  #   cData = df[df['cusip'] == cusip]
+  #   checkStock(cData)
+  #   break
