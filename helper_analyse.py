@@ -159,10 +159,11 @@ def handleOutdatedComp(df):
   return df
 
 def handleMissingVal(df):
-  df['ROE'] = df.groupby('cusip')['ROE'].fillna(method='ffill')
+  df['ROE'] = df.groupby('cusip')['ROE'].transform(lambda x: x.ffill())
   avgDE = df.groupby('cusip')['D/E Ratio'].transform('mean')
   df['D/E Ratio'] = df['D/E Ratio'].fillna(avgDE)
   df = df.dropna(subset=['industry'])
+  df['P/E ratio'] = df.groupby('cusip')['P/E ratio'].transform(lambda x: x.ffill())
   return df
 
 def fetch_industry(ticker):
@@ -180,7 +181,7 @@ def fetch_profit_margin(ticker):
     financials = stock.financials
     net_income = financials.loc['Net Income'] if 'Net Income' in financials.index else None
     revenue = financials.loc['Total Revenue'] if 'Total Revenue' in financials.index else None
-    profit_margin = net_income / revenue if net_income is not None and revenue is not None else None
+    profit_margin = net_income / revenue if net_income is not None and revenue else None
     return profit_margin
   except Exception as e:
     print(f"Error for {ticker}: {e}")
@@ -200,30 +201,69 @@ def fetch_pb_ratio(ticker):
     print(f"Error fetching P/B Ratio for {ticker}: {e}")
     return None
 
-def fetch_pe_ratio(ticker):
+def fetch_pe_ratio(ticker, period):
   try:
     stock = yf.Ticker(ticker)
-    price = stock.info.get('currentPrice', None)
-    eps = stock.info.get('trailingEps', None)
+
+    end_date = pd.to_datetime(period)
+    start_date = end_date - pd.DateOffset(months=3)
+    year = int(period.split('-')[0].strip())
+
+    # closing price of the quarter
+    price = stock.history(period='3mo', start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'))['Close'].mean()
+
+    # eps
+    earnings_data = stock.financials.loc['Net Income'] if 'Net Income' in stock.financials.index else None
+    shares_outstanding = stock.info.get('sharesOutstanding', None)
+    eps = (earnings_data / shares_outstanding).loc[earnings_data.index.year == year].iloc[0] if earnings_data is not None and shares_outstanding else None
+
+    # P/E ratio
     pe_ratio = price / eps if price is not None and eps is not None else None
-    print(pe_ratio)
+    print(f"P/E Ratio for {ticker} in {year}: {pe_ratio}")
     return pe_ratio
   except Exception as e:
-    print(f"Error fetching P/B Ratio for {ticker}: {e}")
+    print(f"Error fetching P/E Ratio for {ticker} in {year}: {e}")
     return None
   
-def fetch_dividend_score(ticker, year):
+def fetch_dividend_score(ticker, period):
   try:
     stock = yf.Ticker(ticker)
-    payout_ratio = stock.info.get('payoutRatio', 0)
-    dYield = stock.info.get('dividendYield', 0)
-    dGrowth = 0
-    
-    adjustedPR = 1 - min(payout_ratio, 1)
-    print(f"ticker {ticker}: payout_ratio - {adjustedPR}, dYield - {dYield}, dGrowth - {dGrowth}")
+
+    end_date = pd.to_datetime(period)
+    start_date = end_date - pd.DateOffset(months=3)
+    year = int(period.split('-')[0].strip())
+
+    dividends = stock.dividends
+    dividends.index = dividends.index.tz_convert(None)
+    div = dividends.loc[start_date:end_date].sum()
+    price = stock.history(period='3mo', start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'))['Close'].mean()
+
+    # payout ratio
+    financials = stock.financials
+    netI = financials.loc['Net Income'] if 'Net Income' in financials.index else None
+    net_income = netI.loc[netI.index.year == year].iloc[0]
+    shares_outstanding = stock.info.get('sharesOutstanding', None)
+    eps = (net_income / shares_outstanding) if net_income is not None and shares_outstanding else None
+    dps = div / shares_outstanding if div is not None and shares_outstanding else None
+    payout_ratio = dps / eps if dps is not None and eps else None
+    adjustedPR = max(0, 1 - min(payout_ratio, 1)) if payout_ratio is not None else 0
+
+    # dividend yield
+    dYield = div / price if div is not None and price else None
+
+    # dividend growth
+    previous_dividends = dividends.loc[start_date - pd.DateOffset(months=3):start_date].sum()
+    dGrowth = ((div - previous_dividends) / previous_dividends) if div and previous_dividends else 0
+
+    combined_score = 0.5 * adjustedPR + 0.3 * dGrowth + 0.2 * dYield
+    print(f"combined score for {ticker}: {combined_score}")
+    return combined_score
   except Exception as e:
     print(f"Error fetching dividend score for {ticker}: {e}")
-    # return None
+    return None
+  
+def fetch_recommendation_score(ticker):
+  return
 
 def fetch_beta(ticker):
   try:
@@ -248,11 +288,17 @@ def handleColWYr(df, cols):
       elif col == 'P/B ratio':
         target = fetch_pb_ratio(ticker)
       elif col == 'dividend_score':
-        fetch_dividend_score(ticker, year)
+        target = fetch_dividend_score(ticker, period)
+      elif col == 'P/E ratio':
+        target = fetch_pe_ratio(ticker, period)
 
       if target is not None:
         try:
-          target_value = target.loc[target.index.year == year].iloc[0]
+          target_value = None
+          if col == 'P/E ratio' or col == 'dividend_score':
+            target_value = target
+          else:
+            target_value = target.loc[target.index.year == year].iloc[0]
           df.at[index, col] = target_value
           print(f"{col} for year {year} - {ticker}: {target_value}")
         except IndexError:
@@ -264,7 +310,7 @@ def handleColWYr(df, cols):
 
 def handleMoreColumns(df):
   df['industry'] = df['ticker'].apply(fetch_industry)
-  df = handleColWYr(df, ['profit_margin', 'P/B ratio'])
+  df = handleColWYr(df, ['profit_margin', 'P/B ratio', 'dividend_score'])
   df['Industry_Avg_ROE'] = df.groupby('industry')['ROE'].transform('mean')
   df['Industry_Avg_DE'] = df.groupby('industry')['D/E Ratio'].transform('mean')
   df['beta'] = df['ticker'].apply(fetch_beta)
@@ -281,9 +327,10 @@ def analyse():
   # df = handleMissingVal(df)
 
   # more features first run
-  # df = handleColWYr(df, ['P/B ratio'])
+  # df = handleColWYr(df, ['dividend_score'])
   # for ticker in df['ticker']:
   #   fetch_pe_ratio(ticker)
+  # df['P/E ratio'] = df.groupby('cusip')['P/E ratio'].transform(lambda x: x.ffill())
 
   df.to_csv(csvName, index=False)
 
