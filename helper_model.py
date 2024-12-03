@@ -53,5 +53,33 @@ def modeling():
   feature_importance = pd.DataFrame({'Feature': features, 'Importance': importance}).sort_values(by='Importance', ascending=False)
   print(feature_importance)
 
+# get final recommendation
+def genRanking():
+  df = pd.read_csv(csvName)
+  df['weight'] = df.groupby('cusip', group_keys=False).apply(getWeight)
+  weighted_ranking = (
+    df.groupby('cusip')
+    .apply(lambda group: (group['ranking_target'] * group['weight']).sum() / group['weight'].sum())
+    .reset_index(name='weighted_ranking')
+    .sort_values('weighted_ranking', ascending=False)
+  )
+
+  # add issuer name
+  issuers = df[['cusip', 'nameOfIssuer']].drop_duplicates()
+  weighted_ranking = pd.merge(weighted_ranking, issuers, on='cusip', how='left')
+
+  rec_no = 10
+  top_recommendations = weighted_ranking.head(rec_no)
+  print(f"Final Stock Recommendations (Top {rec_no} Ranked):")
+  for _, row in top_recommendations.iterrows():
+    print(f"CUSIP: {row['cusip']}, Issuer: {row['nameOfIssuer']}, Weighted Ranking Score: {row['weighted_ranking']:.2f}")
+
+def getWeight(group):
+  periods = group['periodOfReport'].sort_values(ascending=False).unique()
+  weights = {period: 1 - (i / len(periods)) for i, period in enumerate(periods)}
+  weight_map = group['periodOfReport'].map(weights)
+  return weight_map
+
 def runModeling():
-  modeling()
+  # modeling()
+  genRanking()
