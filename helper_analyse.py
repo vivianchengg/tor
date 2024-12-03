@@ -4,6 +4,8 @@ import time
 import pandas as pd
 import requests
 import yfinance as yf
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+import json
 
 csvName = 'berkshire_holdings_combined.csv'
 API_KEY = '4c601dea-c4c1-4f51-8fda-1175163c35b6'
@@ -160,6 +162,7 @@ def handleOutdatedComp(df):
 
 def handleMissingVal(df):
   df['ROE'] = df.groupby('cusip')['ROE'].transform(lambda x: x.ffill())
+  df['ROE'] = df.groupby('cusip')['ROE'].transform(lambda x: x.bfill())
   avgDE = df.groupby('cusip')['D/E Ratio'].transform('mean')
   df['D/E Ratio'] = df['D/E Ratio'].fillna(avgDE)
   df = df.dropna(subset=['industry'])
@@ -249,7 +252,7 @@ def fetch_dividend_score(ticker, period):
     adjustedPR = max(0, 1 - min(payout_ratio, 1)) if payout_ratio is not None else 0
 
     # dividend yield
-    dYield = div / price if div is not None and price else None
+    dYield = div / price if div is not None and price else 0
 
     # dividend growth
     previous_dividends = dividends.loc[start_date - pd.DateOffset(months=3):start_date].sum()
@@ -261,9 +264,6 @@ def fetch_dividend_score(ticker, period):
   except Exception as e:
     print(f"Error fetching dividend score for {ticker}: {e}")
     return None
-  
-def fetch_recommendation_score(ticker):
-  return
 
 def fetch_beta(ticker):
   try:
@@ -317,6 +317,46 @@ def handleMoreColumns(df):
   df['P/E ratio'] = df['ticker'].apply(fetch_pe_ratio)
   return df
 
+def cleanData(df):
+  # ROE
+  df = df.dropna(subset=['ROE'])
+
+  # profit margin, dividend score
+  df['profit_margin'] = df['profit_margin'].fillna(0)
+  df['dividend_score'] = df['dividend_score'].fillna(0.5)
+
+  # beta
+  df['beta'].fillna(1, inplace=True)
+
+  # P/B ratio, P/E ratio
+  df['P/B ratio'] = df.groupby('cusip')['P/B ratio'].transform(lambda x: x.fillna(x.mean()))
+  df['P/E ratio'] = df.groupby('cusip')['P/E ratio'].transform(lambda x: x.fillna(x.mean()))
+
+  return df
+
+def scaleData(df):
+  scaler = StandardScaler()
+  columns = ['ROE', 'D/E Ratio', 'Industry_Avg_DE', 'Industry_Avg_ROE', 'profit_margin', 'P/B ratio', 'beta', 'P/E ratio', 'dividend_score', 'value', 'shrs_or_prn_amt']
+  df[columns] = scaler.fit_transform(df[columns])
+  return df
+
+def handleOutlier(df, cols):
+  for col in cols:
+    Q1 = df[col].quantile(0.05)
+    Q3 = df[col].quantile(0.95)
+    IQR = Q3 - Q1
+    multiplier = 3
+    df = df[(df[col] >= Q1 - multiplier * IQR) & (df[col] <= Q3 + multiplier * IQR)]
+  return df
+
+def encodeCatData(df):
+  encoder = LabelEncoder()
+  df['industry'] = encoder.fit_transform(df['industry'])
+  industry_mapping = {str(k): int(v) for k, v in zip(encoder.classes_, encoder.transform(encoder.classes_))}
+  with open('industry_mapping.json', 'w') as f:
+    json.dump(industry_mapping, f, indent=4)
+  return df
+
 def analyse():
   df = pd.read_csv(csvName)
   df = df.drop_duplicates()
@@ -327,14 +367,10 @@ def analyse():
   # df = handleMissingVal(df)
 
   # more features first run
-  # df = handleColWYr(df, ['dividend_score'])
-  # for ticker in df['ticker']:
-  #   fetch_pe_ratio(ticker)
-  # df['P/E ratio'] = df.groupby('cusip')['P/E ratio'].transform(lambda x: x.ffill())
 
+  # df = cleanData(df)
+  # df = handleOutlier(df, ['dividend_score', 'value_change_pct', 'shares_change_pct'])
+  # df = scaleData(df)
+  # df = encodeCatData(df)
+  # df['ranking_target'] = df.groupby('periodOfReport')['value'].rank(ascending=False, method='dense').astype(int) - 1
   df.to_csv(csvName, index=False)
-
-  # for cusip in df['cusip'].unique():
-  #   cData = df[df['cusip'] == cusip]
-  #   checkStock(cData)
-  #   break

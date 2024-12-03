@@ -7,8 +7,8 @@ csvName = 'berkshire_holdings_combined.csv'
 def sortData(df):
   df['periodOfReport'] = pd.to_datetime(df['periodOfReport'])
   df = df.sort_values(by=['cusip', 'periodOfReport'], ascending=[True, True]).reset_index(drop=True)
-  df['value_change_pct'] = df.groupby('cusip')['value'].pct_change()
-  df['shares_change_pct'] = df.groupby('cusip')['shrs_or_prn_amt'].pct_change()
+  df['value_change_pct'] = df.groupby('cusip')['value'].pct_change().fillna(0)
+  df['shares_change_pct'] = df.groupby('cusip')['shrs_or_prn_amt'].pct_change().fillna(0)
   return df
 
 def saveData(allData):

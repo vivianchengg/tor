@@ -6,6 +6,7 @@ import pandas as pd
 from helper_analyse import analyse
 from helper_fetch import fetchFiles
 from helper_save import saveData
+from helper_model import runModeling
 
 def getTickerMap():
   df1 = pd.read_csv('ticker1.txt', delimiter='|')
@@ -23,7 +24,10 @@ def main():
   # allData = saveData(allData)
 
   # analyse csv
-  analyse()
+  # analyse()
+
+  # modeling
+  runModeling()
 
   # program end alert sound x3
   # for i in range(3):
