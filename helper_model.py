@@ -61,7 +61,7 @@ def genRanking():
     df.groupby('cusip')
     .apply(lambda group: (group['ranking_target'] * group['weight']).sum() / group['weight'].sum())
     .reset_index(name='weighted_ranking')
-    .sort_values('weighted_ranking', ascending=False)
+    .sort_values('weighted_ranking')
   )
 
   # add issuer name
@@ -72,7 +72,7 @@ def genRanking():
   top_recommendations = weighted_ranking.head(rec_no)
   print(f"Final Stock Recommendations (Top {rec_no} Ranked):")
   for _, row in top_recommendations.iterrows():
-    print(f"CUSIP: {row['cusip']}, Issuer: {row['nameOfIssuer']}, Weighted Ranking Score: {row['weighted_ranking']:.2f}")
+    print(f"CUSIP: {row['cusip']}, Issuer: {row['nameOfIssuer']}, Weighted Final Rank: {row['weighted_ranking']:.2f}")
 
 def getWeight(group):
   periods = group['periodOfReport'].sort_values(ascending=False).unique()

@@ -1,10 +1,11 @@
 #! /usr/bin/env python3
 
 import time
+import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, LabelEncoder
 import json
 
 csvName = 'berkshire_holdings_combined.csv'
@@ -357,6 +358,50 @@ def encodeCatData(df):
     json.dump(industry_mapping, f, indent=4)
   return df
 
+def fetchRec(ticker):
+  try:
+    stock = yf.Ticker(ticker)
+    rec = stock.recommendations
+
+    if rec is None or rec.empty:
+      print(f"No recommendations for {ticker}, assigning default score of 0.5")
+      return 0.5
+
+    score = getRecScore(rec)
+    print(f"score: {score}")
+    return score
+  except Exception as e:
+    print(f"Error for {ticker}: {e}")
+    return 0.5
+
+# 0.0 - 0.2: Strong Sell; 0.2 - 0.4: Sell; 0.4 - 0.6: Hold; 0.6 - 0.8: Buy; 0.8 - 1.0: Strong Buy
+def getRecScore(rec):
+  rec_map = {'strongBuy': 1, 'buy': 2, 'hold': 3, 'sell': 4, 'strongSell': 5}
+
+  rec['mean_rec'] = (
+        rec['strongBuy'] * rec_map['strongBuy'] +
+        rec['buy'] * rec_map['buy'] +
+        rec['hold'] * rec_map['hold'] +
+        rec['sell'] * rec_map['sell'] +
+        rec['strongSell'] * rec_map['strongSell']
+    ) / rec[['strongBuy', 'buy', 'hold', 'sell', 'strongSell']].sum(axis=1)
+
+  periods = rec['period'].unique()
+  sorted_periods = sorted(periods, key=lambda x: int(x.replace('m', '')), reverse=True)
+  weights = {period: np.exp(-0.5 * i) for i, period in enumerate(sorted_periods)}
+  rec['weight'] = rec['period'].map(weights)
+  weighted_score = (5 - ((rec['mean_rec'] * rec['weight']).sum() / rec['weight'].sum())) / 5
+
+  return weighted_score
+
+# to be improved
+def getCombinedScore(df):
+  weight = 0.5
+  df['recommendation_score'] = df['ticker'].apply(fetchRec)
+  df['combined_score'] = weight * df['recommendation_score'] + (1 - weight) * df['value']
+  df['ranking_target'] = df.groupby('periodOfReport')['combined_score'].rank(ascending=False, method='dense').astype(int) - 1
+  return df
+
 def analyse():
   df = pd.read_csv(csvName)
   df = df.drop_duplicates()
@@ -373,4 +418,5 @@ def analyse():
   # df = scaleData(df)
   # df = encodeCatData(df)
   # df['ranking_target'] = df.groupby('periodOfReport')['value'].rank(ascending=False, method='dense').astype(int) - 1
+
   df.to_csv(csvName, index=False)
