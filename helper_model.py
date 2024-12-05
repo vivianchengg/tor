@@ -34,7 +34,7 @@ def modeling():
     'learning_rate': 0.05,
     'max_depth': -1,
     'feature_fraction': 0.8,
-    'label_gain': list(range(max_rank + 1))
+    'label_gain': list(range(max_rank + 1)),
   }
 
   model = lgb.train(
@@ -80,6 +80,23 @@ def getWeight(group):
   weight_map = group['periodOfReport'].map(weights)
   return weight_map
 
+def getRecRank():
+  rec_no = 10
+  df = pd.read_csv(csvName)
+  stocks = df.groupby('cusip').first().reset_index()
+  ranking1 = stocks.sort_values('recommendation_score', ascending=False).head(rec_no)
+
+  print("Recent top 10 recommendation by analysts (Recommendation SCORE):")
+  for _, row in ranking1.iterrows():
+    print(f"CUSIP: {row['cusip']}, Issuer: {row['nameOfIssuer']}, Recommendation Score: {row['recommendation_score']:.2f}")
+
+  ranking2 = stocks.sort_values('recommendation_mean', ascending=False).head(rec_no)
+  print("\nRecent top 10 recommendation by analysts (Recommendation MEAN):")
+  for _, row in ranking2.iterrows():
+    print(f"CUSIP: {row['cusip']}, Issuer: {row['nameOfIssuer']}, Recommendation Score: {row['recommendation_mean']:.2f}")
+
 def runModeling():
   # modeling()
   genRanking()
+  print()
+  getRecRank()
