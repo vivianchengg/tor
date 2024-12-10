@@ -7,14 +7,35 @@ from sklearn.metrics import ndcg_score
 
 csvName = 'berkshire_holdings_combined.csv'
 
+def custom_split(df, train_ratio=0.8):
+  df = df.sort_values(by=['cusip', 'periodOfReport'])
+
+  train_data = []
+  test_data = []
+  for _, group in df.groupby('cusip'):
+    group_size = len(group)
+    train_size = int(group_size * train_ratio)
+
+    train_group = group.iloc[:train_size]
+    test_group = group.iloc[train_size:]
+    train_data.append(train_group)
+    test_data.append(test_group)
+
+  train_data = pd.concat(train_data, axis=0)
+  test_data = pd.concat(test_data, axis=0)
+  return train_data, test_data
+
 def modeling():
   df = pd.read_csv(csvName)
 
-  features = ['ROE', 'D/E Ratio', 'profit_margin', 'P/B ratio', 'beta', 'P/E ratio', 'dividend_score']
-  x = df[features]
-  y = df['ranking_target']
+  features = ['D/E Ratio', 'profit_margin', 'P/B ratio', 'beta', 'P/E ratio', 'dividend_score']
+  target = 'ranking_target'
 
-  x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+  train_data, test_data = custom_split(df, train_ratio=0.8)
+  x_train = train_data[features]
+  x_test = test_data[features]
+  y_train = train_data[target]
+  y_test = test_data[target]
 
   # array of group numbers per report period
   train_groups = df.loc[x_train.index, 'periodOfReport'].value_counts(sort=False).values
@@ -96,7 +117,7 @@ def getRecRank():
     print(f"CUSIP: {row['cusip']}, Issuer: {row['nameOfIssuer']}, Recommendation Score: {row['recommendation_mean']:.2f}")
 
 def runModeling():
-  # modeling()
-  genRanking()
-  print()
-  getRecRank()
+  modeling()
+  # genRanking()
+  # print()
+  # getRecRank()
