@@ -2,7 +2,7 @@
 
 This project uses machine learning to replicate the institutional investment behavior of Berkshire Hathaway by analyzing its 13F filings. It extracts and engineers features from fundamental stock data to train a ranking model that scores and ranks stocks based on their similarity to Berkshire's portfolio.
 
-Check out tor notes.pdf for a brief literature review.
+Check out 'tor notes.pdf' for a brief literature review.
 
 ---
 
